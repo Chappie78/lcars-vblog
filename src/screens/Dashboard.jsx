@@ -5,6 +5,8 @@ import LcarsButton from '../components/LcarsButton.jsx'
 import WeatherPanel from '../components/WeatherPanel.jsx'
 import SettingsModal from '../components/SettingsModal.jsx'
 import HomeScreen from './HomeScreen.jsx'
+import { db } from '../firebase'
+import { doc, getDoc, updateDoc } from 'firebase/firestore'
 
 export default function Dashboard({ user, onLogout }) {
   const [logs, setLogs]                 = useState([])
@@ -15,14 +17,15 @@ export default function Dashboard({ user, onLogout }) {
   const [page, setPage]                 = useState('home')
 
   useEffect(() => {
-    const users = JSON.parse(localStorage.getItem('lcars_users') || '{}')
-    setLogs(users[user.starfleetId]?.logs || [])
+    const fetchLogs = async () => {
+      const snap = await getDoc(doc(db, 'users', user.starfleetId))
+      if (snap.exists()) setLogs(snap.data().logs || [])
+    }
+    fetchLogs()
   }, [user.starfleetId])
 
-  const saveLogs = (updated) => {
-    const users = JSON.parse(localStorage.getItem('lcars_users') || '{}')
-    if (users[user.starfleetId]) users[user.starfleetId].logs = updated
-    localStorage.setItem('lcars_users', JSON.stringify(users))
+  const saveLogs = async (updated) => {
+    await updateDoc(doc(db, 'users', user.starfleetId), { logs: updated })
     setLogs(updated)
   }
 
@@ -131,9 +134,9 @@ export default function Dashboard({ user, onLogout }) {
             onClick={() => { setFilter('audio'); setPage('logs') }}
           />
 
-         <div style={{ height: 1, background: 'var(--lcars-gray)', margin: '4px 0' }} />
-			<div className="lcars-label" style={{ color: 'var(--lcars-gold)', paddingLeft: 4 }}>Location</div>
-		<WeatherPanel user={user} />
+          <div style={{ height: 1, background: 'var(--lcars-gray)', margin: '4px 0' }} />
+          <div className="lcars-label" style={{ color: 'var(--lcars-gold)', paddingLeft: 4 }}>Location</div>
+          <WeatherPanel user={user} />
 
         </div>
 
