@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react'
-import { db } from '../firebase'
+import { db, storage } from '../firebase'
 import { doc, updateDoc } from 'firebase/firestore'
+import { ref, uploadBytes, getDownloadURL, deleteObject } from 'firebase/storage'
 
 const COUNTRIES = [
   'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia',
@@ -59,6 +60,7 @@ const Field = ({ label, children }) => (
 
 export default function SettingsModal({ user, onClose, onSave }) {
   const [avatar,           setAvatar]           = useState(user.avatar           || null)
+  const [avatarFile,       setAvatarFile]       = useState(null)
   const [country,          setCountry]          = useState(user.country          || '')
   const [division,         setDivision]         = useState(user.division         || '')
   const [rank,             setRank]             = useState(user.rank             || '')
@@ -73,21 +75,43 @@ export default function SettingsModal({ user, onClose, onSave }) {
   const handleAvatar = (e) => {
     const file = e.target.files[0]
     if (!file) return
-    const reader = new FileReader()
-    reader.onload = (ev) => setAvatar(ev.target.result)
-    reader.readAsDataURL(file)
+    setAvatarFile(file)
+    setAvatar(URL.createObjectURL(file))
+  }
+
+  const handleRemoveAvatar = async () => {
+    if (user.avatar && user.avatar.startsWith('https://')) {
+      try {
+        const oldRef = ref(storage, `avatars/${user.starfleetId}`)
+        await deleteObject(oldRef)
+      } catch (e) { /* already deleted or doesn't exist */ }
+    }
+    setAvatar(null)
+    setAvatarFile(null)
   }
 
   const handleSave = async () => {
     setLoading(true)
     try {
-      const updates = {
-        avatar:           avatar || null,
-        country,          division,        rank,
-        serviceSummary,   commandTrack,    performanceNotes, careerObjective
+      let avatarUrl = avatar
+
+      // Upload new photo to Firebase Storage if a new file was selected
+      if (avatarFile) {
+        const avatarRef = ref(storage, `avatars/${user.starfleetId}`)
+        await uploadBytes(avatarRef, avatarFile)
+        avatarUrl = await getDownloadURL(avatarRef)
       }
-      const ref = doc(db, 'users', user.starfleetId)
-      await updateDoc(ref, updates)
+
+      // If avatar was removed
+      if (!avatar) avatarUrl = null
+
+      const updates = {
+        avatar: avatarUrl,
+        country, division, rank,
+        serviceSummary, commandTrack, performanceNotes, careerObjective
+      }
+      const docRef = doc(db, 'users', user.starfleetId)
+      await updateDoc(docRef, updates)
       onSave({ ...user, ...updates })
       setSaved(true)
       setTimeout(() => { setSaved(false); onClose() }, 1000)
@@ -128,7 +152,7 @@ export default function SettingsModal({ user, onClose, onSave }) {
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 <button className="lcars-pill lcars-pill-ghost" style={{ fontSize: 12 }} onClick={() => fileInput.current.click()}>📁 Upload Photo</button>
-                {avatar && <button className="lcars-pill lcars-pill-danger" style={{ fontSize: 12 }} onClick={() => setAvatar(null)}>Remove</button>}
+                {avatar && <button className="lcars-pill lcars-pill-danger" style={{ fontSize: 12 }} onClick={handleRemoveAvatar}>Remove</button>}
               </div>
               <input ref={fileInput} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatar} />
             </div>
@@ -191,7 +215,7 @@ export default function SettingsModal({ user, onClose, onSave }) {
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--lcars-gray)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
           <button className="lcars-pill lcars-pill-ghost" onClick={onClose}>Cancel</button>
           <button style={{ background: 'var(--lcars-peach)', color: '#000' }} className="lcars-pill" onClick={handleSave} disabled={loading}>
-            {saved ? '✓ Saved!' : loading ? 'Saving...' : 'Save Settings'}
+            {saved ? '✓ Saved!' : loading ? 'Uploading...' : 'Save Settings'}
           </button>
         </div>
 
