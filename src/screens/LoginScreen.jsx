@@ -9,22 +9,51 @@ import {
   removeBiometric
 } from '../biometrics'
 
-function buildStarfleetID(firstName, lastName, dob, genderSpecies) {
-  const initials = (firstName[0] || '').toUpperCase() + (lastName[0] || '').toUpperCase()
-  const dobClean = dob.replace(/-/g, '')
-  return `${initials}-${dobClean}-${genderSpecies}`
+function buildStarfleetID(firstName, lastName, dobCompact, genderSpecies) {
+  const initials =
+    (firstName[0] || '').toUpperCase() + (lastName[0] || '').toUpperCase()
+  return `${initials}-${dobCompact}-${genderSpecies}`
 }
 
-export default function LoginScreen({ onLogin }) {
-  const [tab, setTab]                   = useState('login')
-  const [form, setForm]                 = useState({ firstName: '', lastName: '', dob: '', genderSpecies: 'M' })
-  const [loginId, setLoginId]           = useState('')
-  const [error, setError]               = useState('')
-  const [loading, setLoading]           = useState(false)
-  const [biometricAvailable, setBiometricAvailable] = useState(false)
-  const [savedIds, setSavedIds]         = useState([])
+const DAYS = Array.from({ length: 31 }, (_, i) =>
+  String(i + 1).padStart(2, '0')
+)
+const MONTHS = [
+  { value: '01', label: '01 — Jan' },
+  { value: '02', label: '02 — Feb' },
+  { value: '03', label: '03 — Mar' },
+  { value: '04', label: '04 — Apr' },
+  { value: '05', label: '05 — May' },
+  { value: '06', label: '06 — Jun' },
+  { value: '07', label: '07 — Jul' },
+  { value: '08', label: '08 — Aug' },
+  { value: '09', label: '09 — Sep' },
+  { value: '10', label: '10 — Oct' },
+  { value: '11', label: '11 — Nov' },
+  { value: '12', label: '12 — Dec' }
+]
+const CURRENT_YEAR = new Date().getFullYear()
+const YEARS = Array.from({ length: 120 }, (_, i) =>
+  String(CURRENT_YEAR - i).padStart(4, '0')
+)
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+export default function LoginScreen({ onLogin }) {
+  const [tab, setTab] = useState('login')
+  const [form, setForm] = useState({
+    firstName: '',
+    lastName: '',
+    day: '',
+    month: '',
+    year: '',
+    genderSpecies: 'M'
+  })
+  const [loginId, setLoginId] = useState('')
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [biometricAvailable, setBiometricAvailable] = useState(false)
+  const [savedIds, setSavedIds] = useState([])
+
+  const setField = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   useEffect(() => {
     if (isBiometricsSupported()) {
@@ -34,17 +63,41 @@ export default function LoginScreen({ onLogin }) {
     }
   }, [])
 
+  const getDobStrings = () => {
+    const { day, month, year } = form
+    if (!day || !month || !year) return { dobDisplay: '', dobCompact: '' }
+    const dobDisplay = `${day}-${month}-${year}`
+    const dobCompact = `${day}${month}${year}`
+    return { dobDisplay, dobCompact }
+  }
+
   const handleRegister = async () => {
     setError('')
-    if (!form.firstName.trim() || !form.lastName.trim()) return setError('First and last name required.')
-    if (!form.dob) return setError('Date of birth required.')
-    const dobRegex = /^\d{2}-\d{2}-\d{4}$/
-    if (!dobRegex.test(form.dob)) return setError('Date must be DD-MM-YYYY.')
-    const [dd, mm, yyyy] = form.dob.split('-')
-    const date = new Date(`${yyyy}-${mm}-${dd}`)
-    if (isNaN(date)) return setError('Invalid date.')
-    const dobCompact = `${dd}${mm}${yyyy}`
-    const id = buildStarfleetID(form.firstName, form.lastName, dobCompact, form.genderSpecies)
+    if (!form.firstName.trim() || !form.lastName.trim()) {
+      return setError('First and last name required.')
+    }
+
+    const { dobDisplay, dobCompact } = getDobStrings()
+    if (!dobDisplay) return setError('Date of birth required.')
+
+    // Validate date using JS Date to respect Apple HIG: no surprising rejections
+    const dobIso = `${form.year}-${form.month}-${form.day}`
+    const date = new Date(dobIso)
+    if (
+      isNaN(date) ||
+      date.getDate() !== Number(form.day) ||
+      date.getMonth() + 1 !== Number(form.month) ||
+      date.getFullYear() !== Number(form.year)
+    ) {
+      return setError('Invalid date of birth.')
+    }
+
+    const id = buildStarfleetID(
+      form.firstName,
+      form.lastName,
+      dobCompact,
+      form.genderSpecies
+    )
 
     setLoading(true)
     try {
@@ -54,7 +107,7 @@ export default function LoginScreen({ onLogin }) {
       const userData = {
         firstName: form.firstName,
         lastName: form.lastName,
-        dob: form.dob,
+        dob: dobDisplay,
         genderSpecies: form.genderSpecies,
         starfleetId: id,
         logs: []
@@ -76,11 +129,15 @@ export default function LoginScreen({ onLogin }) {
     try {
       const ref = doc(db, 'users', id)
       const snap = await getDoc(ref)
-      if (!snap.exists()) return setError('Starfleet ID not found. Please register first.')
+      if (!snap.exists()) {
+        return setError('Starfleet ID not found. Please register first.')
+      }
       const userData = snap.data()
 
       if (biometricAvailable && !hasBiometricRegistered(id)) {
-        const offer = window.confirm('Would you like to enable biometric login for this device?')
+        const offer = window.confirm(
+          'Would you like to enable biometric login for this device?'
+        )
         if (offer) {
           try {
             await registerBiometric(id)
@@ -99,7 +156,7 @@ export default function LoginScreen({ onLogin }) {
     }
   }
 
-  const handleBiometricLogin = async (id) => {
+  const handleBiometricLogin = async id => {
     setError('')
     setLoading(true)
     try {
@@ -116,9 +173,16 @@ export default function LoginScreen({ onLogin }) {
     }
   }
 
-  const previewId = form.firstName && form.lastName && form.dob.length === 10
-    ? buildStarfleetID(form.firstName, form.lastName, form.dob.replace(/-/g, ''), form.genderSpecies)
-    : null
+  const { dobDisplay, dobCompact } = getDobStrings()
+  const previewId =
+    form.firstName && form.lastName && dobCompact.length === 8
+      ? buildStarfleetID(
+          form.firstName,
+          form.lastName,
+          dobCompact,
+          form.genderSpecies
+        )
+      : null
 
   return (
     <div
@@ -143,7 +207,12 @@ export default function LoginScreen({ onLogin }) {
         {/* LCARS Header */}
         <div
           className="lcars-mobile-stack"
-          style={{ display: 'flex', alignItems: 'stretch', marginBottom: 24, gap: 8 }}
+          style={{
+            display: 'flex',
+            alignItems: 'stretch',
+            marginBottom: 24,
+            gap: 8
+          }}
         >
           <div
             style={{
@@ -210,7 +279,7 @@ export default function LoginScreen({ onLogin }) {
                   disabled={loading}
                   style={{
                     width: '100%',
-                    padding: '12px',
+                    padding: 12,
                     background: '#1a1a2e',
                     border: '1px solid #99f',
                     borderRadius: 6,
@@ -227,7 +296,16 @@ export default function LoginScreen({ onLogin }) {
                   }}
                 >
                   <span style={{ fontSize: 20 }}>🔐</span>
-                  <span style={{ textOverflow: 'ellipsis', overflow: 'hidden' }}>{id}</span>
+                  <span
+                    style={{
+                      textOverflow: 'ellipsis',
+                      overflow: 'hidden',
+                      whiteSpace: 'nowrap',
+                      maxWidth: '100%'
+                    }}
+                  >
+                    {id}
+                  </span>
                 </button>
               ))}
             </div>
@@ -286,7 +364,11 @@ export default function LoginScreen({ onLogin }) {
                 inputMode="text"
                 autoCapitalize="characters"
               />
-              <button onClick={handleLogin} disabled={loading} style={btnStyle('#f90')}>
+              <button
+                onClick={handleLogin}
+                disabled={loading}
+                style={btnStyle('#f90')}
+              >
                 {loading ? 'ACCESSING...' : 'ACCESS SYSTEM'}
               </button>
             </div>
@@ -300,7 +382,7 @@ export default function LoginScreen({ onLogin }) {
                   <div style={labelStyle}>FIRST NAME</div>
                   <input
                     value={form.firstName}
-                    onChange={e => set('firstName', e.target.value)}
+                    onChange={e => setField('firstName', e.target.value)}
                     style={inputStyle}
                   />
                 </div>
@@ -308,25 +390,64 @@ export default function LoginScreen({ onLogin }) {
                   <div style={labelStyle}>LAST NAME</div>
                   <input
                     value={form.lastName}
-                    onChange={e => set('lastName', e.target.value)}
+                    onChange={e => setField('lastName', e.target.value)}
                     style={inputStyle}
                   />
                 </div>
               </div>
 
-              <div style={labelStyle}>DATE OF BIRTH (DD-MM-YYYY)</div>
-              <input
-                value={form.dob}
-                onChange={e => set('dob', e.target.value)}
-                placeholder="23-03-1975"
-                style={{ ...inputStyle, marginBottom: 12 }}
-                inputMode="numeric"
-              />
+              {/* DOB with pickers — iOS-friendly */}
+              <div style={labelStyle}>DATE OF BIRTH</div>
+              <div
+                className="lcars-mobile-stack"
+                style={{
+                  display: 'flex',
+                  gap: 8,
+                  marginBottom: 12
+                }}
+              >
+                <select
+                  value={form.day}
+                  onChange={e => setField('day', e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Day</option>
+                  {DAYS.map(d => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={form.month}
+                  onChange={e => setField('month', e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Month</option>
+                  {MONTHS.map(m => (
+                    <option key={m.value} value={m.value}>
+                      {m.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={form.year}
+                  onChange={e => setField('year', e.target.value)}
+                  style={inputStyle}
+                >
+                  <option value="">Year</option>
+                  {YEARS.map(y => (
+                    <option key={y} value={y}>
+                      {y}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <div style={labelStyle}>GENDER / SPECIES CODE</div>
               <select
                 value={form.genderSpecies}
-                onChange={e => set('genderSpecies', e.target.value)}
+                onChange={e => setField('genderSpecies', e.target.value)}
                 style={{ ...inputStyle, marginBottom: 16 }}
               >
                 <option value="M">M — Male</option>
@@ -353,11 +474,17 @@ export default function LoginScreen({ onLogin }) {
                     wordBreak: 'break-all'
                   }}
                 >
+                  PREVIEW DOB: {dobDisplay}
+                  <br />
                   PREVIEW ID: <strong>{previewId}</strong>
                 </div>
               )}
 
-              <button onClick={handleRegister} disabled={loading} style={btnStyle('#99f')}>
+              <button
+                onClick={handleRegister}
+                disabled={loading}
+                style={btnStyle('#99f')}
+              >
                 {loading ? 'REGISTERING...' : 'ENLIST IN STARFLEET'}
               </button>
             </div>
@@ -409,7 +536,8 @@ const inputStyle = {
   letterSpacing: 1,
   marginBottom: 12,
   boxSizing: 'border-box',
-  outline: 'none'
+  outline: 'none',
+  minHeight: 44
 }
 
 const labelStyle = {
@@ -419,7 +547,7 @@ const labelStyle = {
   marginBottom: 4
 }
 
-const btnStyle = (color) => ({
+const btnStyle = color => ({
   width: '100%',
   padding: '12px 0',
   background: color,
@@ -432,5 +560,6 @@ const btnStyle = (color) => ({
   letterSpacing: 2,
   cursor: 'pointer',
   marginTop: 4,
-  touchAction: 'manipulation'
+  touchAction: 'manipulation',
+  minHeight: 44
 })

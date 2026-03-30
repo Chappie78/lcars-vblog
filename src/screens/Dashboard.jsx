@@ -9,13 +9,13 @@ import { db } from '../firebase'
 import { doc, getDoc, updateDoc } from 'firebase/firestore'
 
 export default function Dashboard({ user, onLogout }) {
-  const [logs, setLogs]                 = useState([])
-  const [showModal, setShowModal]       = useState(false)
-  const [modalType, setModalType]       = useState('text')
-  const [filter, setFilter]             = useState('all')
+  const [logs, setLogs] = useState([])
+  const [showModal, setShowModal] = useState(false)
+  const [modalType, setModalType] = useState('text')
+  const [filter, setFilter] = useState('all')
   const [showSettings, setShowSettings] = useState(false)
-  const [page, setPage]                 = useState('home')
-  const [userProfile, setUserProfile]   = useState(user)
+  const [page, setPage] = useState('home')
+  const [userProfile, setUserProfile] = useState(user)
 
   useEffect(() => {
     const fetchLogs = async () => {
@@ -29,23 +29,31 @@ export default function Dashboard({ user, onLogout }) {
     fetchLogs()
   }, [user.starfleetId])
 
-  const saveLogs = async (updated) => {
+  const saveLogs = async updated => {
     await updateDoc(doc(db, 'users', user.starfleetId), { logs: updated })
     setLogs(updated)
   }
 
-  const addLog    = (log) => saveLogs([{ ...log, id: Date.now(), createdAt: new Date().toISOString() }, ...logs])
-  const deleteLog = (id)  => saveLogs(logs.filter(l => l.id !== id))
-  const openModal = (type) => { setModalType(type); setShowModal(true) }
+  const addLog = log =>
+    saveLogs([{ ...log, id: Date.now(), createdAt: new Date().toISOString() }, ...logs])
+  const deleteLog = id => saveLogs(logs.filter(l => l.id !== id))
+  const openModal = type => {
+    setModalType(type)
+    setShowModal(true)
+  }
 
-  const filteredLogs = filter === 'all' ? logs : logs.filter(l => l.type === filter)
+  const filteredLogs =
+    filter === 'all' ? logs : logs.filter(l => l.type === filter)
 
   const stardate = () => {
     const now = new Date()
-    const doy = Math.floor((now - new Date(now.getFullYear(), 0, 0)) / 86400000)
-    return `${now.getFullYear() - 1900 + 21}${String(doy).padStart(3, '0')}.${String(
-      now.getHours()
-    ).padStart(2, '0')}`
+    const doy = Math.floor(
+      (now - new Date(now.getFullYear(), 0, 0)) / 86400000
+    )
+    return `${now.getFullYear() - 1900 + 21}${String(doy).padStart(
+      3,
+      '0'
+    )}.${String(now.getHours()).padStart(2, '0')}`
   }
 
   const NavBtn = ({ label, bg, color = '#000', onClick, active }) => (
@@ -55,7 +63,7 @@ export default function Dashboard({ user, onLogout }) {
         background: active ? 'var(--lcars-white)' : bg,
         border: 'none',
         cursor: 'pointer',
-        padding: '0 16px',
+        padding: '8px 12px',
         fontFamily: 'Antonio',
         fontWeight: 700,
         fontSize: 13,
@@ -84,11 +92,14 @@ export default function Dashboard({ user, onLogout }) {
     >
       {/* TOP HEADER */}
       <div
+        className="lcars-page"
         style={{
           display: 'flex',
           flexWrap: 'wrap',
           minHeight: 56,
-          flexShrink: 0
+          flexShrink: 0,
+          paddingLeft: 0,
+          paddingRight: 0
         }}
       >
         <div
@@ -103,7 +114,7 @@ export default function Dashboard({ user, onLogout }) {
           style={{
             background: 'var(--lcars-gold)',
             flex: 1,
-            minWidth: 200,
+            minWidth: 160,
             display: 'flex',
             alignItems: 'center',
             padding: '4px 12px'
@@ -148,7 +159,8 @@ export default function Dashboard({ user, onLogout }) {
         <div
           style={{
             display: 'flex',
-            flexShrink: 0
+            flexShrink: 0,
+            flexWrap: 'wrap'
           }}
         >
           <NavBtn
@@ -162,16 +174,24 @@ export default function Dashboard({ user, onLogout }) {
             bg="var(--lcars-orange)"
             onClick={() => setShowSettings(true)}
           />
-          <NavBtn label="Logout" bg="#CC2200" color="#fff" onClick={onLogout} />
+          <NavBtn
+            label="Logout"
+            bg="#CC2200"
+            color="#fff"
+            onClick={onLogout}
+          />
         </div>
       </div>
 
       {/* Decorative sub-bar */}
       <div
+        className="lcars-page"
         style={{
           display: 'flex',
           height: 8,
-          flexShrink: 0
+          flexShrink: 0,
+          paddingLeft: 0,
+          paddingRight: 0
         }}
       >
         <div style={{ background: 'var(--lcars-purple)', width: 56 }} />
@@ -192,6 +212,7 @@ export default function Dashboard({ user, onLogout }) {
 
       {/* ID bar */}
       <div
+        className="lcars-page"
         style={{
           background: 'var(--lcars-dgray)',
           borderBottom: '1px solid var(--lcars-gray)',
@@ -204,7 +225,9 @@ export default function Dashboard({ user, onLogout }) {
       >
         <span className="lcars-label" style={{ fontSize: 10 }}>
           STARFLEET ID:{' '}
-          <span style={{ color: 'var(--lcars-gold)' }}>{userProfile.starfleetId}</span>
+          <span style={{ color: 'var(--lcars-gold)' }}>
+            {userProfile.starfleetId}
+          </span>
         </span>
       </div>
 
@@ -220,13 +243,13 @@ export default function Dashboard({ user, onLogout }) {
           gap: 8
         }}
       >
-        {/* Left spine (hidden on very small devices if desired) */}
+        {/* Left spine — decorative, hidden on mobile */}
         <div
           className="lcars-mobile-hide"
           style={{ width: 36, background: 'var(--lcars-purple)', flexShrink: 0 }}
         />
 
-        {/* MAIN CONTENT WRAPPER (sidebar + main content stack on mobile) */}
+        {/* MAIN CONTENT WRAPPER (sidebar + main content) */}
         <div
           className="lcars-mobile-stack"
           style={{
@@ -394,7 +417,10 @@ export default function Dashboard({ user, onLogout }) {
                         ? 'No log entries found'
                         : `No ${filter} logs found`}
                     </div>
-                    <div className="lcars-label" style={{ textAlign: 'center' }}>
+                    <div
+                      className="lcars-label"
+                      style={{ textAlign: 'center' }}
+                    >
                       {filter === 'all'
                         ? 'Begin your first log using the panel above'
                         : 'Switch filter to see other log types'}
@@ -418,7 +444,7 @@ export default function Dashboard({ user, onLogout }) {
           </div>
         </div>
 
-        {/* Right accent column (hide on very small screens if desired) */}
+        {/* Right accent column — decorative */}
         <div
           className="lcars-mobile-hide"
           style={{
