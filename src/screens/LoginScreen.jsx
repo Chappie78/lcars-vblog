@@ -1,6 +1,13 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { db } from '../firebase'
 import { doc, getDoc, setDoc } from 'firebase/firestore'
+import {
+  isBiometricsSupported,
+  registerBiometric,
+  authenticateBiometric,
+  hasBiometricRegistered,
+  removeBiometric
+} from '../biometrics'
 
 function buildStarfleetID(firstName, lastName, dob, genderSpecies) {
   const initials = (firstName[0] || '').toUpperCase() + (lastName[0] || '').toUpperCase()
@@ -9,12 +16,22 @@ function buildStarfleetID(firstName, lastName, dob, genderSpecies) {
 }
 
 export default function LoginScreen({ onLogin }) {
-  const [tab, setTab] = useState('login')
-  const [form, setForm] = useState({ firstName: '', lastName: '', dob: '', genderSpecies: 'M' })
-  const [loginId, setLoginId] = useState('')
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [tab, setTab]                   = useState('login')
+  const [form, setForm]                 = useState({ firstName: '', lastName: '', dob: '', genderSpecies: 'M' })
+  const [loginId, setLoginId]           = useState('')
+  const [error, setError]               = useState('')
+  const [loading, setLoading]           = useState(false)
+  const [biometricAvailable, setBiometricAvailable] = useState(false)
+  const [savedIds, setSavedIds]         = useState([])
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  useEffect(() => {
+    if (isBiometricsSupported()) {
+      setBiometricAvailable(true)
+      const stored = JSON.parse(localStorage.getItem('lcars-webauthn') || '{}')
+      setSavedIds(Object.keys(stored))
+    }
+  }, [])
 
   const handleRegister = async () => {
     setError('')
@@ -33,12 +50,9 @@ export default function LoginScreen({ onLogin }) {
       const snap = await getDoc(ref)
       if (snap.exists()) return setError('Starfleet ID already registered.')
       const userData = {
-        firstName: form.firstName,
-        lastName: form.lastName,
-        dob: form.dob,
-        genderSpecies: form.genderSpecies,
-        starfleetId: id,
-        logs: []
+        firstName: form.firstName, lastName: form.lastName,
+        dob: form.dob, genderSpecies: form.genderSpecies,
+        starfleetId: id, logs: []
       }
       await setDoc(ref, userData)
       onLogin(userData)
@@ -52,14 +66,45 @@ export default function LoginScreen({ onLogin }) {
   const handleLogin = async () => {
     setError('')
     const id = loginId.trim().toUpperCase()
+    if (!id) return setError('Please enter your Starfleet ID.')
     setLoading(true)
     try {
       const ref = doc(db, 'users', id)
       const snap = await getDoc(ref)
       if (!snap.exists()) return setError('Starfleet ID not found. Please register first.')
-      onLogin(snap.data())
+      const userData = snap.data()
+
+      // Offer biometric registration if supported and not yet registered
+      if (biometricAvailable && !hasBiometricRegistered(id)) {
+        const offer = window.confirm('Would you like to enable biometric login for this device?')
+        if (offer) {
+          try {
+            await registerBiometric(id)
+            setSavedIds(prev => [...prev, id])
+          } catch { /* user declined or device unsupported */ }
+        }
+      }
+
+      onLogin(userData)
     } catch (e) {
       setError('Login failed. Try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleBiometricLogin = async (id) => {
+    setError('')
+    setLoading(true)
+    try {
+      const verified = await authenticateBiometric(id)
+      if (!verified) return setError('Biometric verification failed.')
+      const ref = doc(db, 'users', id)
+      const snap = await getDoc(ref)
+      if (!snap.exists()) return setError('Starfleet ID not found.')
+      onLogin(snap.data())
+    } catch (e) {
+      setError('Biometric login failed. Use your Starfleet ID instead.')
     } finally {
       setLoading(false)
     }
@@ -73,7 +118,7 @@ export default function LoginScreen({ onLogin }) {
     <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: "'Orbitron', sans-serif" }}>
       <div style={{ width: '100%', maxWidth: 480 }}>
 
-        {/* LCARS Header Bar */}
+        {/* LCARS Header */}
         <div style={{ display: 'flex', alignItems: 'stretch', marginBottom: 24 }}>
           <div style={{ width: 60, background: '#f90', borderRadius: '32px 0 0 32px' }} />
           <div style={{ flex: 1, background: '#c66', padding: '10px 16px' }}>
@@ -82,6 +127,25 @@ export default function LoginScreen({ onLogin }) {
           </div>
           <div style={{ width: 16, background: '#99f', borderRadius: '0 8px 8px 0' }} />
         </div>
+
+        {/* Biometric quick-login buttons */}
+        {biometricAvailable && savedIds.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <div style={{ color: '#f90', fontSize: 10, letterSpacing: 2, marginBottom: 8, textAlign: 'center' }}>
+              BIOMETRIC ACCESS — THIS DEVICE
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {savedIds.map(id => (
+                <button key={id} onClick={() => handleBiometricLogin(id)} disabled={loading}
+                  style={{ width: '100%', padding: '12px', background: '#1a1a2e', border: '1px solid #99f', borderRadius: 6, color: '#99f', fontFamily: "'Orbitron', sans-serif", fontSize: 12, letterSpacing: 2, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 10 }}>
+                  <span style={{ fontSize: 20 }}>🔐</span>
+                  <span>{id}</span>
+                </button>
+              ))}
+            </div>
+            <div style={{ height: 1, background: '#333', margin: '16px 0' }} />
+          </div>
+        )}
 
         {/* Tab Switcher */}
         <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
@@ -127,12 +191,7 @@ export default function LoginScreen({ onLogin }) {
                 </div>
               </div>
               <div style={labelStyle}>DATE OF BIRTH (DD-MM-YYYY)</div>
-              <input
-                value={form.dob}
-                onChange={e => set('dob', e.target.value)}
-                placeholder="23-03-1975"
-                style={{ ...inputStyle, marginBottom: 12 }}
-              />
+              <input value={form.dob} onChange={e => set('dob', e.target.value)} placeholder="23-03-1975" style={{ ...inputStyle, marginBottom: 12 }} />
               <div style={labelStyle}>GENDER / SPECIES CODE</div>
               <select value={form.genderSpecies} onChange={e => set('genderSpecies', e.target.value)} style={{ ...inputStyle, marginBottom: 16 }}>
                 <option value="M">M — Male</option>
@@ -162,7 +221,6 @@ export default function LoginScreen({ onLogin }) {
           )}
         </div>
 
-        {/* Footer */}
         <div style={{ textAlign: 'center', marginTop: 16, color: '#444', fontSize: 10, letterSpacing: 2 }}>
           STARFLEET MEDICAL DATABASE — AUTHORISED PERSONNEL ONLY
         </div>
@@ -176,9 +234,7 @@ const inputStyle = {
   borderRadius: 4, color: '#fff', fontFamily: "'Orbitron', sans-serif", fontSize: 12,
   letterSpacing: 1, marginBottom: 12, boxSizing: 'border-box', outline: 'none'
 }
-
 const labelStyle = { color: '#f90', fontSize: 10, letterSpacing: 2, marginBottom: 4 }
-
 const btnStyle = (color) => ({
   width: '100%', padding: '12px 0', background: color, border: 'none', borderRadius: 6,
   color: '#000', fontFamily: "'Orbitron', sans-serif", fontWeight: 700, fontSize: 12,
