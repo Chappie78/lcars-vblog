@@ -238,7 +238,7 @@ export default function LoginScreen({ onLogin }) {
                 letterSpacing: 2
               }}
             >
-              STARFLEET MEDICAL
+              MISSION JOURNAL
             </div>
             <div
               style={{
@@ -517,7 +517,7 @@ export default function LoginScreen({ onLogin }) {
             letterSpacing: 2
           }}
         >
-          STARFLEET MEDICAL DATABASE — AUTHORISED PERSONNEL ONLY
+          MISSION JOURNAL DATABASE — AUTHORISED PERSONNEL ONLY
         </div>
       </div>
     </div>
