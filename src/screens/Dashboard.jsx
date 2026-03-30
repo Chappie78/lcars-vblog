@@ -15,11 +15,16 @@ export default function Dashboard({ user, onLogout }) {
   const [filter, setFilter]             = useState('all')
   const [showSettings, setShowSettings] = useState(false)
   const [page, setPage]                 = useState('home')
+  const [userProfile, setUserProfile]   = useState(user)
 
   useEffect(() => {
     const fetchLogs = async () => {
       const snap = await getDoc(doc(db, 'users', user.starfleetId))
-      if (snap.exists()) setLogs(snap.data().logs || [])
+      if (snap.exists()) {
+        const data = snap.data()
+        setLogs(data.logs || [])
+        setUserProfile(data)
+      }
     }
     fetchLogs()
   }, [user.starfleetId])
@@ -67,7 +72,7 @@ export default function Dashboard({ user, onLogout }) {
         <div style={{ background: 'var(--lcars-purple)', width: 56, flexShrink: 0 }} />
         <div style={{ background: 'var(--lcars-gold)', flex: 1, display: 'flex', alignItems: 'center', padding: '0 20px' }}>
           <span style={{ fontFamily: 'Antonio', fontWeight: 700, fontSize: 20, color: '#000', letterSpacing: '0.12em', textTransform: 'uppercase' }}>
-            Personal Log — {user.firstName} {user.lastName}
+            Personal Log — {userProfile.firstName} {userProfile.lastName}
           </span>
         </div>
         <div style={{ background: 'var(--lcars-gold)', display: 'flex', alignItems: 'center', padding: '0 20px', borderLeft: '3px solid #000' }}>
@@ -92,7 +97,7 @@ export default function Dashboard({ user, onLogout }) {
       {/* ID bar */}
       <div style={{ background: 'var(--lcars-dgray)', borderBottom: '1px solid var(--lcars-gray)', padding: '6px 20px', display: 'flex', alignItems: 'center', flexShrink: 0 }}>
         <span className="lcars-label">
-          STARFLEET ID: <span style={{ color: 'var(--lcars-gold)' }}>{user.starfleetId}</span>
+          STARFLEET ID: <span style={{ color: 'var(--lcars-gold)' }}>{userProfile.starfleetId}</span>
         </span>
       </div>
 
@@ -136,7 +141,7 @@ export default function Dashboard({ user, onLogout }) {
 
           <div style={{ height: 1, background: 'var(--lcars-gray)', margin: '4px 0' }} />
           <div className="lcars-label" style={{ color: 'var(--lcars-gold)', paddingLeft: 4 }}>Location</div>
-          <WeatherPanel user={user} />
+          <WeatherPanel user={userProfile} />
 
         </div>
 
@@ -144,7 +149,7 @@ export default function Dashboard({ user, onLogout }) {
         <div style={{ flex: 1, overflowY: 'auto', background: 'var(--lcars-panel)', margin: '8px 8px 8px 0', borderRadius: 4, border: '1px solid var(--lcars-gray)', display: 'flex', flexDirection: 'column' }}>
 
           {page === 'home' ? (
-            <HomeScreen user={user} />
+            <HomeScreen user={userProfile} />
           ) : (
             <div style={{ padding: 20 }}>
               {filteredLogs.length === 0 ? (
@@ -177,8 +182,8 @@ export default function Dashboard({ user, onLogout }) {
 
       </div>
 
-      {showModal    && <NewLogModal type={modalType} user={user} onSave={addLog} onClose={() => setShowModal(false)} />}
-      {showSettings && <SettingsModal user={user} onClose={() => setShowSettings(false)} />}
+      {showModal    && <NewLogModal type={modalType} user={userProfile} onSave={addLog} onClose={() => setShowModal(false)} />}
+      {showSettings && <SettingsModal user={userProfile} onSave={(updated) => setUserProfile(updated)} onClose={() => setShowSettings(false)} />}
     </div>
   )
 }

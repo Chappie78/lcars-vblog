@@ -1,4 +1,6 @@
 import { useState, useRef } from 'react'
+import { db } from '../firebase'
+import { doc, updateDoc } from 'firebase/firestore'
 
 const COUNTRIES = [
   'Afghanistan','Albania','Algeria','Andorra','Angola','Argentina','Armenia','Australia',
@@ -55,19 +57,17 @@ const Field = ({ label, children }) => (
   </div>
 )
 
-export default function SettingsModal({ user, onClose }) {
-  const users   = JSON.parse(localStorage.getItem('lcars_users') || '{}')
-  const current = users[user.starfleetId] || {}
-
-  const [avatar,          setAvatar]          = useState(current.avatar          || null)
-  const [country,         setCountry]         = useState(current.country         || '')
-  const [division,        setDivision]        = useState(current.division        || '')
-  const [rank,            setRank]            = useState(current.rank            || '')
-  const [serviceSummary,  setServiceSummary]  = useState(current.serviceSummary  || '')
-  const [commandTrack,    setCommandTrack]    = useState(current.commandTrack    || '')
-  const [performanceNotes,setPerformanceNotes]= useState(current.performanceNotes|| '')
-  const [careerObjective, setCareerObjective] = useState(current.careerObjective || '')
-  const [saved,           setSaved]           = useState(false)
+export default function SettingsModal({ user, onClose, onSave }) {
+  const [avatar,           setAvatar]           = useState(user.avatar           || null)
+  const [country,          setCountry]          = useState(user.country          || '')
+  const [division,         setDivision]         = useState(user.division         || '')
+  const [rank,             setRank]             = useState(user.rank             || '')
+  const [serviceSummary,   setServiceSummary]   = useState(user.serviceSummary   || '')
+  const [commandTrack,     setCommandTrack]     = useState(user.commandTrack     || '')
+  const [performanceNotes, setPerformanceNotes] = useState(user.performanceNotes || '')
+  const [careerObjective,  setCareerObjective]  = useState(user.careerObjective  || '')
+  const [saved,            setSaved]            = useState(false)
+  const [loading,          setLoading]          = useState(false)
   const fileInput = useRef()
 
   const handleAvatar = (e) => {
@@ -78,17 +78,24 @@ export default function SettingsModal({ user, onClose }) {
     reader.readAsDataURL(file)
   }
 
-  const handleSave = () => {
-    const allUsers = JSON.parse(localStorage.getItem('lcars_users') || '{}')
-    if (allUsers[user.starfleetId]) {
-      Object.assign(allUsers[user.starfleetId], {
-        avatar, country, division, rank,
-        serviceSummary, commandTrack, performanceNotes, careerObjective
-      })
+  const handleSave = async () => {
+    setLoading(true)
+    try {
+      const updates = {
+        avatar:           avatar || null,
+        country,          division,        rank,
+        serviceSummary,   commandTrack,    performanceNotes, careerObjective
+      }
+      const ref = doc(db, 'users', user.starfleetId)
+      await updateDoc(ref, updates)
+      onSave({ ...user, ...updates })
+      setSaved(true)
+      setTimeout(() => { setSaved(false); onClose() }, 1000)
+    } catch (e) {
+      console.error('Save failed:', e)
+    } finally {
+      setLoading(false)
     }
-    localStorage.setItem('lcars_users', JSON.stringify(allUsers))
-    setSaved(true)
-    setTimeout(() => { setSaved(false); onClose() }, 1000)
   }
 
   return (
@@ -183,8 +190,8 @@ export default function SettingsModal({ user, onClose }) {
         {/* Footer */}
         <div style={{ padding: '16px 24px', borderTop: '1px solid var(--lcars-gray)', display: 'flex', gap: 8, justifyContent: 'flex-end', flexShrink: 0 }}>
           <button className="lcars-pill lcars-pill-ghost" onClick={onClose}>Cancel</button>
-          <button style={{ background: 'var(--lcars-peach)', color: '#000' }} className="lcars-pill" onClick={handleSave}>
-            {saved ? '✓ Saved!' : 'Save Settings'}
+          <button style={{ background: 'var(--lcars-peach)', color: '#000' }} className="lcars-pill" onClick={handleSave} disabled={loading}>
+            {saved ? '✓ Saved!' : loading ? 'Saving...' : 'Save Settings'}
           </button>
         </div>
 
