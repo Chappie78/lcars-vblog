@@ -1,4 +1,6 @@
 import React, { useState, useRef } from 'react'
+import { storage } from '../firebase'
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage'
 
 function genStardate() {
   const now = new Date()
@@ -7,16 +9,18 @@ function genStardate() {
 }
 
 export default function NewLogModal({ type, user, onSave, onClose }) {
-  const [title, setTitle]               = useState(`${type.toUpperCase()} LOG — STARDATE ${genStardate()}`)
-  const [content, setContent]           = useState('')
-  const [notes, setNotes]               = useState('')
-  const [mediaUrl, setMediaUrl]         = useState(null)
-  const [recording, setRecording]       = useState(false)
+  const [title, setTitle]                 = useState(`${type.toUpperCase()} LOG — STARDATE ${genStardate()}`)
+  const [content, setContent]             = useState('')
+  const [notes, setNotes]                 = useState('')
+  const [mediaUrl, setMediaUrl]           = useState(null)
+  const [mediaBlob, setMediaBlob]         = useState(null)
+  const [recording, setRecording]         = useState(false)
   const [mediaRecorder, setMediaRecorder] = useState(null)
-  const [error, setError]               = useState('')
-  const fileInput   = useRef()
+  const [error, setError]                 = useState('')
+  const [uploading, setUploading]         = useState(false)
+  const fileInput    = useRef()
   const videoPreview = useRef()
-  const chunks      = useRef([])
+  const chunks       = useRef([])
 
   const TYPE_COLOR = { text: 'var(--lcars-gold)', video: 'var(--lcars-orange)', audio: 'var(--lcars-purple)' }
   const color = TYPE_COLOR[type]
@@ -24,6 +28,7 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
   const handleFile = (e) => {
     const file = e.target.files[0]
     if (!file) return
+    setMediaBlob(file)
     setMediaUrl(URL.createObjectURL(file))
   }
 
@@ -40,7 +45,9 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
       const mr = new MediaRecorder(stream)
       mr.ondataavailable = e => chunks.current.push(e.data)
       mr.onstop = () => {
-        const blob = new Blob(chunks.current, { type: type === 'video' ? 'video/webm' : 'audio/webm' })
+        const mimeType = type === 'video' ? 'video/webm' : 'audio/webm'
+        const blob = new Blob(chunks.current, { type: mimeType })
+        setMediaBlob(blob)
         setMediaUrl(URL.createObjectURL(blob))
         stream.getTracks().forEach(t => t.stop())
         if (videoPreview.current) videoPreview.current.srcObject = null
@@ -53,13 +60,41 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
     }
   }
 
-  const stopRecording = () => { mediaRecorder?.stop(); setRecording(false); setMediaRecorder(null) }
+  const stopRecording = () => {
+    mediaRecorder?.stop()
+    setRecording(false)
+    setMediaRecorder(null)
+  }
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (type === 'text' && !content.trim()) return setError('Log content cannot be empty.')
-    if ((type === 'video' || type === 'audio') && !mediaUrl) return setError('Please record or upload a file.')
-    onSave({ type, title, content, notes, url: mediaUrl, stardate: genStardate() })
-    onClose()
+    if ((type === 'video' || type === 'audio') && !mediaBlob) return setError('Please record or upload a file.')
+
+    setUploading(true)
+    setError('')
+    try {
+      let uploadedUrl = null
+
+      if (mediaBlob) {
+        const ext = type === 'video' ? 'webm' : 'webm'
+        const path = `logs/${user.starfleetId}/${Date.now()}.${ext}`
+        const storageRef = ref(storage, path)
+        await uploadBytes(storageRef, mediaBlob)
+        uploadedUrl = await getDownloadURL(storageRef)
+      }
+
+      onSave({
+        type, title, content, notes,
+        url: uploadedUrl,
+        stardate: genStardate()
+      })
+      onClose()
+    } catch (e) {
+      console.error('Upload failed:', e)
+      setError('Upload failed. Please try again.')
+    } finally {
+      setUploading(false)
+    }
   }
 
   return (
@@ -78,17 +113,11 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
         {/* Body */}
         <div style={{ overflowY: 'auto', padding: '20px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
 
-          {/* Title — pre-filled, user can edit */}
           <div>
             <div className="lcars-label" style={{ marginBottom: '6px' }}>Log Title</div>
-            <input
-              className="lcars-input"
-              value={title}
-              onChange={e => setTitle(e.target.value)}
-            />
+            <input className="lcars-input" value={title} onChange={e => setTitle(e.target.value)} />
           </div>
 
-          {/* Text log entry */}
           {type === 'text' ? (
             <div>
               <div className="lcars-label" style={{ marginBottom: '6px' }}>Log Entry</div>
@@ -103,17 +132,18 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {type === 'video' && (
-                <video
-                  ref={videoPreview}
-                  muted
-                  style={{ width: '100%', maxHeight: '200px', background: '#000', borderRadius: '4px', border: `1px solid ${color}44`, display: recording ? 'block' : 'none' }}
-                />
+                <video ref={videoPreview} muted style={{ width: '100%', maxHeight: '200px', background: '#000', borderRadius: '4px', border: `1px solid ${color}44`, display: recording ? 'block' : 'none' }} />
               )}
               {mediaUrl && type === 'video' && !recording && (
                 <video controls src={mediaUrl} style={{ width: '100%', maxHeight: '200px', borderRadius: '4px', border: `1px solid ${color}` }} />
               )}
               {mediaUrl && type === 'audio' && !recording && (
                 <audio controls src={mediaUrl} style={{ width: '100%' }} />
+              )}
+              {mediaUrl && !recording && (
+                <div style={{ color: 'var(--lcars-gold)', fontFamily: 'Antonio', fontSize: 12, letterSpacing: 1 }}>
+                  ✓ File ready — will upload when you commit to log
+                </div>
               )}
               <div style={{ display: 'flex', gap: '8px' }}>
                 {!recording
@@ -126,25 +156,20 @@ export default function NewLogModal({ type, user, onSave, onClose }) {
             </div>
           )}
 
-          {/* Supplemental notes */}
           <div>
             <div className="lcars-label" style={{ marginBottom: '6px' }}>Supplemental Notes (optional)</div>
-            <input
-              className="lcars-input"
-              placeholder="Additional observations..."
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-            />
+            <input className="lcars-input" placeholder="Additional observations..." value={notes} onChange={e => setNotes(e.target.value)} />
           </div>
 
           {error && <div style={{ color: '#FF4444', fontFamily: 'Antonio', fontSize: '13px' }}>⚠ {error}</div>}
+          {uploading && <div style={{ color: 'var(--lcars-gold)', fontFamily: 'Antonio', fontSize: '13px' }}>⏫ Uploading to Starfleet database...</div>}
         </div>
 
         {/* Footer */}
         <div style={{ padding: '16px 20px', borderTop: `1px solid ${color}44`, display: 'flex', gap: '8px', justifyContent: 'flex-end', flexShrink: 0 }}>
-          <button className="lcars-pill lcars-pill-ghost" onClick={onClose}>Cancel</button>
-          <button className={`lcars-pill ${type==='text' ? 'lcars-pill-gold' : type==='video' ? 'lcars-pill-orange' : 'lcars-pill-purple'}`} onClick={handleSave}>
-            Commit to Log
+          <button className="lcars-pill lcars-pill-ghost" onClick={onClose} disabled={uploading}>Cancel</button>
+          <button className={`lcars-pill ${type==='text' ? 'lcars-pill-gold' : type==='video' ? 'lcars-pill-orange' : 'lcars-pill-purple'}`} onClick={handleSave} disabled={uploading}>
+            {uploading ? 'Uploading...' : 'Commit to Log'}
           </button>
         </div>
 
