@@ -1,6 +1,5 @@
 export default function HomeScreen({ user }) {
-  const userData = JSON.parse(localStorage.getItem('lcars_users') || '{}')[user.starfleetId] || {}
-  const { avatar, division, rank, country, serviceSummary, commandTrack, performanceNotes, careerObjective } = userData
+  const { avatar, division, rank, country, serviceSummary, commandTrack, performanceNotes, careerObjective } = user
 
   const stardate = () => {
     const now = new Date()
